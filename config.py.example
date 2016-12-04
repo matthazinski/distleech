@@ -10,3 +10,11 @@ SITES = [{'name': 'PTH',
 COUCHURI = 'http://127.0.0.1:5984'
 
 DB_PATH = '/home/matt/.distleech/db.sqlite'
+
+SEEDBOXES = [{'name': 'example',
+              'host': 'example.com',
+              'username': 'admin',
+              'password': 'hunter2',
+              'port': 9091}]
+
+SERVER_URI = 'https://foo:bar@example.com'

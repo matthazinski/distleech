@@ -1,5 +1,20 @@
 #!/usr/bin/env python2
+"""
+Usage: distleech.py metadata SITE NUMBER
+       distleech.py torrent SITE NUMBER SEEDBOX
+       distleech.py (-h|--help)
 
+Arguments:
+    SITE         name of Gazelle instance to use
+    NUMBER       number of torrents/metadata to download
+    SEEDBOX      name of seedbox from config.py
+
+Options:
+    -h --help    show this
+    m, metadata  download metadata (rather than torrents)
+    t, torrent   download torrents (rather than metadata)
+""" 
+from docopt import docopt
 import whatapi
 import cPickle as pickle
 from pprint import pprint
@@ -17,7 +32,10 @@ from datetime import datetime, timedelta
 from urlparse import urlparse
 
 
+
 def _first_run(username, password, baseurl, filename):
+    if not os.path.exists(expanduser('~/.distleech')):
+        os.makedirs(expanduser('~/.distleech'))
     apihandle = whatapi.WhatAPI(username=username,
                                 password=password,
                                 baseurl=baseurl)
@@ -33,7 +51,7 @@ def get_api_handle(username, password, baseurl, cookies=None):
 
 
 def get_api_handle_for_site(sitename):
-    fname = '{}.dat'.format(sitename)
+    fname = expanduser('~/.distleech/{}.dat'.format(sitename))
 
     for site in SITES:
         if site['name'] == sitename:
@@ -53,8 +71,9 @@ def get_api_handle_for_site(sitename):
     return None
 
 
-def close_api_handle(apihandle):
-    pickle.dump(apihandle.session.cookies, open('cookies.dat', 'wb'))
+def close_api_handle_for_site(apihandle, sitename):
+    fname = expanduser('~/.distleech/{}.dat'.format(sitename))
+    pickle.dump(apihandle.session.cookies, open(fname, 'wb'))
 
 
 def normalize_url(url):
@@ -340,49 +359,50 @@ def add_torrent_info_to_couchdb(apihandle, dbname, torrentid, username=None):
 
     return True
 
-
     
-
-def main(csvlist):
-    sitename = 'apollo'
-    handle = get_api_handle_for_site(sitename)
-
-    torrentdir = expanduser('~/.distleech/torrentlist/{0}'.format(sitename))
-
-    if not os.path.exists(torrentdir):
-        os.makedirs(torrentdir)
-
-
-    for csvpath in csvlist:
-        albumsByArtist, err = csv_to_album_list(csvpath)
-        count = 0
-
-        for artist, albumList in albumsByArtist.iteritems():
-            count = count + 1
-            print('Searching for artist {0} ({1}/{2})'.format(artist, count, len(albumsByArtist)))
-            write_download_torrents_list(handle, 
-                                         artist,
-                                         albumList,
-                                         torrentdir)
-            time.sleep(2)
-
-    close_api_handle(handle)
-
-        
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: ./distleech.py CSVFILE ...")
+    args = docopt(__doc__)
+
+    if not args['NUMBER'].isdigit():
+        print('NUMBER must be a number')
         sys.exit(1)
 
-    s = SqlHandler()
+    # Validate siteName
+    siteName = args['SITE']
+    site = {}
+    for s in SITES:
+        if s['name'] == siteName:
+            site = s
+    if not site:
+        print('SITE not found in config.py. Exiting.')
+        sys.exit(1)
 
-    for csvfile in sys.argv[1:]:
-        s.add_csv_to_db(csvfile)
-    s.get_stats()
+    handle = get_api_handle_for_site(siteName)
 
-    dllist = s.get_metadata_to_download(5)
-    print(dllist)
+    if args['torrent']:
+        # Validate seedbox name
+        from config import SEEDBOXES, SERVER_URI
+        seedboxName = args['SEEDBOX']
+        seedbox = {}
+        for s in SEEDBOXES:
+            if s['name'] == seedboxName:
+                seedbox = s
+        if not seedbox:
+            print('SEEDBOX not found in config.py. Exiting.')
+            sys.exit(1)
 
-    s.finish()
+        raise NotImplementedError('Torrent adding not yet implemented')
 
-    #main(sys.argv[1:])
+        # TODO get N items from server
+        # TODO iterate, parse sortArtist, store items in cache, download torrent file, sleep 2 seconds
+        # TODO add files to seedbox
+
+    elif args['metadata']:
+        from config import SERVER_URI
+        raise NotImplementedError('Metadata downloading not yet implemented')
+
+        # TODO get N items from server
+        # TODO iterate, grab items using couchdb cache, sleep 2 seconds
+        # TODO return to server
+
+    close_api_handle_for_site(handle, siteName)
