@@ -1,0 +1,570 @@
+#!/usr/bin/env python2
+
+import whatapi
+import cPickle as pickle
+from pprint import pprint
+import json
+import os
+import csv
+import time
+import sys
+from config import SITES, COUCHURI
+from os.path import expanduser
+import sqlite3
+import os.path
+import couchdb
+from datetime import datetime, timedelta
+from urlparse import urlparse
+
+
+def _first_run(username, password, baseurl, filename):
+    apihandle = whatapi.WhatAPI(username=username,
+                                password=password,
+                                baseurl=baseurl)
+    pickle.dump(apihandle.session.cookies, open(filename, 'wb'))
+  
+
+def get_api_handle(username, password, baseurl, cookies=None):
+    apihandle = whatapi.WhatAPI(username=username,
+                                password=password,
+                                baseurl=baseurl,
+                                cookies=cookies)
+    return apihandle
+
+
+def get_api_handle_for_site(sitename):
+    fname = '{}.dat'.format(sitename)
+
+    for site in SITES:
+        if site['name'] == sitename:
+            try:
+                cookies = pickle.load(open(fname, 'rb'))
+            except:
+                _first_run(site['username'], 
+                           site['password'],
+                           site['baseurl'],
+                           fname)
+                cookies = pickle.load(open(fname, 'rb'))
+            return get_api_handle(site['username'],
+                                  site['password'],
+                                  site['baseurl'],
+                                  cookies)
+
+    return None
+
+
+def close_api_handle(apihandle):
+    pickle.dump(apihandle.session.cookies, open('cookies.dat', 'wb'))
+
+
+def normalize_url(url):
+    u = urlparse(url)
+    return u.netloc
+
+
+def get_torrent_ids_for_dl(preferredTorrents):
+    """
+    Takes a list of preferredTorrents as returned from the method
+    get_best_torrents_from_group(). Provides a list of torrent IDs that should
+    be downloaded. This DLs anything with a score of at least 100 and the best
+    item regardless of the score.
+    """
+    list = []
+    bestScore = 0
+    bestItem = 0
+    for format, value in preferredTorrents.iteritems():
+        if 'id' in value:
+            if value['score'] > bestScore:
+                bestItem = value['id']
+                bestScore = value['score']
+            if value['score'] >= 100:
+                list.append(value['id'])
+
+    if bestItem not in list:
+        list.append(bestItem)
+
+    return list
+
+
+def get_best_torrents_from_group(tg):
+    """Takes JSON dict like so:
+
+    >>> j['response']['torrentgroup'][0]['torrent'][0]
+    {u'remastered': False, u'remasterRecordLabel': u'', u'seeders': 0, u'encoding': u'Lossless', u'hasLog': True, u'media': u'CD', u'format': u'FLAC', u'scene': False, u'groupId': 5469, u'remasterTitle': u'', u'leechers': 0, u'remasterYear': 0, u'size': 271825613, u'snatched': 0, u'time': u'2016-11-26 06:07:51', u'logScore': 100, u'freeTorrent': True, u'hasFile': 9970, u'id': 9970, u'fileCount': 15, u'hasCue': True}A
+
+    We'd be passing in j['response']['torrentgroup'][0] where j comes from
+    get_artist_json()
+    """
+
+    relGrpName = tg['groupName']    # Album name
+
+    preferredTorrents = {'WEB': {}, 'Vinyl': {}, 'CD': {}}
+
+    flacList = []
+    
+    for t in tg['torrent']:
+        tScore = 0
+        
+        # Lossless only, don't want any bitrot
+        if t['format'] != 'FLAC':
+            continue
+        else:
+            flacList.append(t['id'])
+
+        # fuck it, we'll sort out what we dl'd later. Get all the flac.
+
+        # TODO
+
+        if t['media'] == 'WEB':
+            if t['encoding'] == 'Lossless':
+                tScore = 50
+            elif t['encoding'] == '24bit Lossless':
+                tScore = 100
+            if 'score' in preferredTorrents['WEB']:
+                if tScore < preferredTorrents['WEB']['score']:
+                    preferredTorrents['WEB']['id'] = t['id']
+                    preferredTorrents['WEB']['score'] = tScore
+            else:
+                preferredTorrents['WEB']['id'] = t['id']
+                preferredTorrents['WEB']['score'] = tScore
+                
+
+        elif t['media'] == 'CD':
+            if t['hasLog']:
+                tScore = t['logScore']
+            if t['hasCue']:
+                tScore = tScore + 1
+            if 'score' in preferredTorrents['CD']:
+                if tScore < preferredTorrents['CD']['score']:
+                    preferredTorrents['CD']['id'] = t['id']
+                    preferredTorrents['CD']['score'] = tScore
+            else:
+                preferredTorrents['CD']['id'] = t['id']
+                preferredTorrents['CD']['score'] = tScore
+
+        elif t['media'] == 'Vinyl':
+            tScore = 0
+            if t['encoding'] == 'Lossless':
+                tScore = 50
+            elif t['encoding'] == '24bit Lossless':
+                tScore = 100
+
+            if 'score' in preferredTorrents['Vinyl']:
+                if tScore < preferredTorrents['Vinyl']['score']:
+                    preferredTorrents['Vinyl']['id'] = t['id']
+                    preferredTorrents['Vinyl']['score'] = tScore
+            else:
+                preferredTorrents['Vinyl']['id'] = t['id']
+                preferredTorrents['Vinyl']['score'] = tScore
+
+        else:
+            # Cassettes?
+            continue
+
+
+    return preferredTorrents
+
+    
+        # TODO if 'remasterTitle' is non-null then this is a reissue
+       
+def read_artist_json(artistId):
+    if os.path.exists('cache/{0}.json'.format(artistId)):
+        with open('cache/{0}.json'.format(artistId)) as f:
+            json_data = f.read()
+
+        data = json.loads(json_data)
+        return data
+
+    else:
+        return {}
+
+
+def write_artist_json(result):
+    if 'response' not in result:
+        return
+
+    artistId = result['response']['id']
+    with open('cache/{0}.json'.format(artistId), 'wb') as f:
+        json.dump(result, f)
+
+
+def get_artist_json(apihandle, artistname):
+    try:
+        result = apihandle.request('artist', artistname=artistname)
+    except:
+        result = {}
+
+    return result
+
+
+def get_torrent_json(apihandle, torrentid):
+    try:
+        result = apihandle.request('torrent', id=torrentid)
+    except:
+        result = {}
+
+    return result
+
+
+def csv_to_album_list(csvpath):
+    unparseableArtists = []
+
+    albumsByArtist = {}
+
+    with open(csvpath) as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            bareArtist = ''
+            sortArtist = row['Artist Name']
+            album = row['Album Title']
+
+            bareArtist = sortartist_to_artist(sortArtist)
+
+            if bareArtist == '':
+                unparseableArtists.append(sortArtist)
+            else:
+                if bareArtist in albumsByArtist:
+                    albumsByArtist[bareArtist].append(album)
+                else:
+                    albumsByArtist[bareArtist] = [album]
+    
+    return albumsByArtist, unparseableArtists
+
+
+def sortartist_to_artist(sortArtist):
+    """
+    Attempts to convert an artist string from Len's sort formatting to an
+    actual artist name. This still won't work well for multi-artist lists.
+    """
+    if ',' in sortArtist:
+        cs = sortArtist.split(',')
+        if len(cs) == 2:
+            if '/' in cs[1]:
+                bareArtist = sortArtist.split('/')[1].strip()
+            else:
+                bareArtist = '{0} {1}'.format(cs[1].strip(), cs[0].strip())
+    else:
+        bareArtist = sortArtist.strip()
+
+
+def write_download_torrents_list(handle, artist, albumList, outputDir):
+    j = get_artist_json(handle, artist)
+    if 'response' not in j:
+        return
+
+    write_artist_json(j)
+
+    print('Finding torrents for {0}'.format(artist))
+        
+    ids = []
+
+    for group in j['response']['torrentgroup']:
+        if group['groupName'] in albumList:
+            print('...found {0}'.format(group['groupName']))
+            best = get_best_torrents_from_group(group)
+            ids = ids + get_torrent_ids_for_dl(best)
+
+    path = os.path.join(outputDir, '{0}.txt'.format(j['response']['id']))
+    
+    with open(path, 'a') as f:
+        for i in ids:
+            f.write(str(i) + '\n')
+
+
+def get_cached_artist_page(sitename, artistname, apihandle=None, expirytime=0):
+    """
+    Gets the artist page from CouchDB, if it exists. If the requested document
+    does not exist in the cache, or the cache is stale (based on expirytime),
+    the Gazelle API is used to fetch the latest artist information and add it
+    to the cache prior to returning.
+
+    An API handle is optional. If not specified, reads will return the most
+    recent cached data regardless of the expirytime parameter. If no data is
+    present, an empty dict will be returned.
+    """
+    # TODO
+    return
+
+
+def add_torrent_info_to_couchdb(apihandle, dbname, torrentid, username=None):
+    """
+    Grabs torrentid from Gazelle using the API handle and stores it in dbname
+    in CouchDB. The UUID will be the torrent ID. We'll be storing:
+    - data['response']
+    - datetime of utcnow() - this lets us know if data is stale. There is no
+      immediate use for this, but we may wish to scrub torrent metadata at a
+      later date and remove things that are either removed from the site or
+      have bad metadata.
+    - username of submitter - an optional field to indicate who last modified
+      this document
+
+    DB name should match the format: torrents_$sitename
+
+    This method must be called whenever a torrent is downloaded which you
+    expect Alexandria to be able to handle. A mapreduce can be performed from
+    the data in couch to figure out what torrent an unknown directory
+    corresponds to, so that it can be appropriately filed away. The file sizes
+    can also be used to ensure files downloaded completely.
+
+    We aren't using python bindings for libtorrent to handle torrents directly
+    because it's a bitch to compile, particularly on Arch.
+
+    Returns True if there was anything worth storing obtained from Gazelle's
+    API and False otherwise
+    """
+    j = get_torrent_json(apihandle, torrentid)
+
+    doc = {'_id': str(torrentid)}
+
+    # If we get an invalid response, don't want to risk corrupting potentially
+    # valid (yet old) data for the same torrent ID.
+    if 'status' in j:
+        if j['status'] != 'success':
+            return False
+
+    if username:
+        doc['username'] = username
+
+    doc['datetime'] = datetime.utcnow().isoformat()
+
+    if 'response' in j:
+        doc['torrent'] = j['response']
+
+    # Create the db if it doesn't exist
+    couch = couchdb.Server(COUCHURI)
+    if dbname not in couch:
+        couch.create(dbname)
+
+    db = couch[dbname]
+    db.save(doc)
+
+    return True
+
+
+class SqlHandler:
+
+    def __init__(self):
+        """
+        Creates a sqlite datbase if one does not exist with the appropriate tables.
+        Returns a cursor.
+        """
+        userdir = expanduser('~/.distleech/')
+        if not os.path.exists(userdir):
+            os.makedirs(userdir)
+
+        fname = os.path.join(userdir, 'db.sqlite')
+        if not os.path.exists(fname):
+            print('sqlite db does not exist, creating a new one...')
+            self.con = sqlite3.connect(fname)
+            self.con.text_factory = lambda x: unicode(x, 'utf-8', 'ignore')
+
+            self.cur = self.con.cursor()
+            self.cur.execute('CREATE TABLE AlbumInventory(Id INTEGER PRIMARY KEY AUTOINCREMENT, Album TEXT, SortArtist TEXT, LastDispatched TIMESTAMP, LastNacked TIMESTAMP);')
+            self.cur.execute('CREATE TABLE DownloadTasks(Id INTEGER PRIMARY KEY AUTOINCREMENT, User TEXT, SiteUrl TEXT, SiteTorrentId INTEGER, LastDispatched TIMESTAMP, Filled INTEGER, LocalUri TEXT, AlbumRequest INTEGER, FOREIGN KEY(AlbumRequest) REFERENCES AlbumInventory(id));')
+
+            # TODO add "last dispatched" and "last nacked" field to DownloadTasks
+            # We can make a Flask API endpoints for:
+            # - Users request a given number of tasks. We exclude things that were
+            #   dispatched to another user in the past day, and then sort by last
+            #   NACKed to give the oldest entries.
+            # - Users submit tasks. They will either say "failed to find $ID in
+            #   AlbumInventory" or "$ID seems to exist at [$TorrentID1 and
+            #   $TorrentID2] on $SITE
+            # This would let us create multiple entries for a given site. Once at
+            # least one DownloadTasks exists for an AlbumInventory row, it will
+            # not be dispatched to users who request additional tasks.
+
+
+            # TODO we need a table for trackers - site URL isn't cutting it unless
+            # we have a way to normalize URLs easily.
+
+            # TODO get_torrent_request() method for users at a Flask endpoint to
+            # specify a tracker, and get a torrent ID from DownloadTasks allocated
+            # to them
+        else:
+            self.con = sqlite3.connect(fname)
+            self.cur = self.con.cursor()
+
+
+    def finish(self):
+        self.con.commit()
+        self.con.close()
+
+
+    def get_all_requests(self):
+        self.cur.execute('SELECT * FROM DownloadTasks')
+        data = self.cur.fetchall()
+        print(data)
+
+
+    def add_csv_to_db(self, csvpath):
+        with open(csvpath) as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                sortArtist = unicode(row['Artist Name'], 'utf-8').strip()
+                album = unicode(row['Album Title'], 'utf-8').strip()
+
+                # If it already exists in the DB, ignore it.
+                self.cur.execute('SELECT * FROM AlbumInventory WHERE Album=:album AND SortArtist=:sortArtist', {'album': album, 'sortArtist': sortArtist})
+                result = self.cur.fetchone()
+                if result:
+                    continue
+
+                self.cur.execute('INSERT INTO AlbumInventory(Album, SortArtist, LastDispatched, LastNacked) VALUES (?, ?, 0, 0)', (album, sortArtist))
+
+        self.con.commit()
+
+    def get_metadata_to_download(self, numrows, dispatch=True):
+        """
+        Selects albums from our inventory that have not been allocated to other
+        users in the past 2 hours. When dispatch is set, the metadata for the
+        returned albums will be marked as dispatched so that other users don't
+        try to fetch metadata the same albums.
+        """
+        if numrows > 100:   # ratelimit
+            numrows = 100
+
+        now_date = datetime.now()
+        min_date = datetime.now() + timedelta(hours=-2)
+        q = 'SELECT Id, Album, SortArtist FROM AlbumInventory WHERE Id NOT IN (SELECT AlbumRequest FROM DownloadTasks) AND LastDispatched < ? ORDER BY LastNacked ASC LIMIT ?'
+        
+        self.cur.execute(q, (min_date, str(numrows)))
+        
+        rows = self.cur.fetchall()
+
+        if dispatch:
+            # XXX this query could probably be optimized
+            for row in rows: 
+                q = 'UPDATE AlbumInventory SET LastDispatched = ? WHERE Id = ?'
+                self.cur.execute(q, (now_date, row[0]))
+
+        self.con.commit()
+        return rows
+    
+    def get_torrent_to_download(self, numrows, site, dispatch=True):
+        """
+        Selects torrents from a specified site from DownloadTasks and gives
+        them to the user to download. If dispatch it set, the user will be
+        marked as responsible for downloading. Users have 14 days to complete
+        the download by default.
+        """
+        site = normalize_url(site)
+        if numrows > 100:   # ratelimit
+            numrows = 100
+
+        now_date = datetime.now()
+        min_date = datetime.now() + timedelta(days=-14)
+        q = 'SELECT Id, SiteTorrentId FROM DownloadTasks WHERE LastDispatched < ? AND Filled = 0 AND SiteUrl = ?, ORDER BY LastDispatched ASC LIMIT ?'
+        
+        self.cur.execute(q, (min_date, site, str(numrows)))
+        
+        rows = self.cur.fetchall()
+
+        if dispatch:
+            # XXX this query could probably be optimized
+            for row in rows: 
+                q = 'UPDATE DownloadTasks SET LastDispatched = ? WHERE Id = ?'
+                self.cur.execute(q, (now_date, row[0]))
+
+        self.con.commit()
+        return rows
+
+    def submit_metadata_results(self, results):
+        """
+        This function is run whenever a client returns the results from the
+        metadata lookups dispatched during get_metadata_to_download(). 
+
+        This should be a single dict. Key is the AlbumInventory Id and value
+        is a list of (site, value) tuples.
+        """
+        now = datetime.now()
+        for albumId,v in results.iteritems():
+            # Item wasn't found. Even if this already exists in DownloadTasks,
+            # we don't care because we take that table into account when
+            # issuing new metadata dispatches.
+            if not v:
+                q = 'UPDATE AlbumInventory SET LastNacked = ? WHERE Id = ?'
+                self.cur.execute(q, (now, albumId))
+            else:
+                for row in v:
+                    site, tid = row
+                    site = normalize_url(site)
+                    # If there's already a corresponding DownloadTask for the
+                    # site, tid pair, we can safely ignore it
+                    q = 'SELECT Id FROM DownloadTasks WHERE SiteUrl = ? AND SiteTorrentId = ?'
+                    self.cur.execute(q, (site, tid))
+                    existingTasks = self.cur.fetchall() 
+                    if existingTasks:
+                        continue
+
+                    q = 'INSERT INTO DownloadTasks(SiteUrl, SiteTorrentId, AlbumRequest, LastDispatched, LastNacked, Filled) VALUES (?, ?, ?, 0, 0, 0)'
+                    self.cur.execute(q, (site, tid, albumId))
+
+        self.con.commit()
+        return
+
+    def get_stats(self):
+        self.cur.execute('SELECT Id FROM AlbumInventory')
+        numAlbums = len(self.cur.fetchall())
+
+        print('Albums: {0}'.format(numAlbums))
+
+        min_date = datetime.now() + timedelta(hours=-2)
+        self.cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched < ?', (min_date,))
+        numStaleMetadataDispatches = len(self.cur.fetchall())
+        self.cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched > ?', (min_date,))
+        numActiveMetadataDispatches = len(self.cur.fetchall())
+        print('Metadata dispatches: {} stale, {} active'.format(numStaleMetadataDispatches, numActiveMetadataDispatches))
+
+        self.cur.execute('SELECT Id FROM DownloadTasks WHERE Filled=1')
+        numFilled = len(self.cur.fetchall())
+        self.cur.execute('SELECT Id FROM DownloadTasks WHERE Filled=0')
+        self.cur.fetchone()
+        numUnfilled = len(self.cur.fetchall())
+
+        print('Requests: {0}/{1} filled'.format(numFilled, numFilled+numUnfilled))
+    
+
+def main(csvlist):
+    sitename = 'apollo'
+    handle = get_api_handle_for_site(sitename)
+
+    torrentdir = expanduser('~/.distleech/torrentlist/{0}'.format(sitename))
+
+    if not os.path.exists(torrentdir):
+        os.makedirs(torrentdir)
+
+
+    for csvpath in csvlist:
+        albumsByArtist, err = csv_to_album_list(csvpath)
+        count = 0
+
+        for artist, albumList in albumsByArtist.iteritems():
+            count = count + 1
+            print('Searching for artist {0} ({1}/{2})'.format(artist, count, len(albumsByArtist)))
+            write_download_torrents_list(handle, 
+                                         artist,
+                                         albumList,
+                                         torrentdir)
+            time.sleep(2)
+
+    close_api_handle(handle)
+
+        
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: ./distleech.py CSVFILE ...")
+        sys.exit(1)
+
+    s = SqlHandler()
+
+    for csvfile in sys.argv[1:]:
+        s.add_csv_to_db(csvfile)
+    s.get_stats()
+
+    dllist = s.get_metadata_to_download(5)
+    print(dllist)
+
+    s.finish()
+
+    #main(sys.argv[1:])

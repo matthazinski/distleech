@@ -1,0 +1,10 @@
+SITES = [{'name': 'PTH',
+          'username': 'root',
+          'password': 'hunter2',
+          'baseurl': 'https://passtheheadphones.me'},
+         {'name': 'apollo',
+          'username': 'root',
+          'password': 'hunter2',
+          'baseurl': 'https://apollo.rip'}]
+
+COUCHURI = 'http://127.0.0.1:5984'
