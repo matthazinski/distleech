@@ -171,6 +171,10 @@ def submit_metadata_results():
 
     cur = get_db().cursor()
     now = datetime.now()
+
+    if not results:
+        return "Invalid request - is it JSON?", 400
+
     for albumId,v in results.iteritems():
         # JSON has no such thing as int keys
         albumId = int(albumId)
@@ -195,7 +199,7 @@ def submit_metadata_results():
                 if existingTasks:
                     continue
 
-                q = 'INSERT INTO DownloadTasks(SiteUrl, SiteTorrentId, AlbumRequest, LastDispatched, LastNacked, Filled) VALUES (?, ?, ?, 0, 0, 0)'
+                q = 'INSERT INTO DownloadTasks(SiteUrl, SiteTorrentId, AlbumRequest, LastDispatched, Filled) VALUES (?, ?, ?, 0, 0)'
                 cur.execute(q, (site, tid, albumId))
 
     get_db().commit()

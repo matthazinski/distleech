@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 """
-Usage: distleech.py metadata SITE NUMBER
+Usage: distleech.py metadata NUMBER
        distleech.py torrent SITE NUMBER SEEDBOX
        distleech.py (-h|--help)
 
@@ -29,8 +29,9 @@ import sqlite3
 import os.path
 import couchdb
 from datetime import datetime, timedelta
-from urlparse import urlparse
-
+from urlparse import urlparse, urljoin
+import requests
+import time
 
 
 def _first_run(username, password, baseurl, filename):
@@ -198,19 +199,39 @@ def get_best_torrents_from_group(tg):
         # TODO if 'remasterTitle' is non-null then this is a reissue
 
 
-def get_artist_json(apihandle, artistname):
-    # TODO add caching
+def get_artist_json(apihandle, artistname, cacheTimeout=604800):
+    """
+    Returns (response, isCacheHit)
+
+    response is the value of the "response" key in Gazelle's JSON response.
+    isCacheHit is true if the data was pulled from the cache, and False
+    otherwise.
+    """ 
+    now = int(time.time())
+    minTime = now - cacheTimeout
+    baseurl = normalize_url(apihandle.baseurl)
+
+    cached = get_cached_artist_page(baseurl, artistname)
+
+    if cached:
+        if 'lastmod' in cached:
+            if cached['lastmod'] > minTime:
+                return cached['data'], True
+
     try:
-        result = apihandle.request('artist', artistname=artistname)
+        time.sleep(2)   # needed for gazelle's ratelimiting
+        result = apihandle.request('artist', artistname=artistname)['response']
+        set_cached_artist_page(baseurl, artistname, result)
     except:
         result = {}
 
-    return result
+    return result, False
 
 
 def get_torrent_json(apihandle, torrentid):
     # TODO add caching
     try:
+        time.sleep(2)
         result = apihandle.request('torrent', id=torrentid)
     except:
         result = {}
@@ -232,6 +253,8 @@ def sortartist_to_artist(sortArtist):
                 bareArtist = '{0} {1}'.format(cs[1].strip(), cs[0].strip())
     else:
         bareArtist = sortArtist.strip()
+    
+    return sortArtist
 
 
 def find_torrents_for_album(handle, artist, album):
@@ -239,38 +262,65 @@ def find_torrents_for_album(handle, artist, album):
     Takes artist and album and returns a list of torrent IDs from the
     apihandle.
     """
+
+    siteurl = normalize_url(handle.baseurl)
+
+
     # TODO caching 
-    j = get_artist_json(handle, artist)
-    if 'response' not in j:
-        return
+    j, wasCached = get_artist_json(handle, artist, cacheTimeout=604800)
     
     print('Finding torrents for {0}'.format(artist))
     ids = []
 
-    for group in j['response']['torrentgroup']:
+    if 'torrentgroup' not in j:
+        return []
+
+    for group in j['torrentgroup']:
         # TODO fuzzy search
         if group['groupName'] == album:
             print('...found {0}'.format(group['groupName']))
             best = get_best_torrents_from_group(group)
             ids = ids + get_torrent_ids_for_dl(best)
 
+    return ids
 
-def get_cached_artist_page(sitename, artistname, apihandle=None, expirytime=0):
+
+def get_cached_artist_page(baseurl, artistName):
     """
     Gets the artist page from CouchDB, if it exists. If the requested document
-    does not exist in the cache, or the cache is stale (based on expirytime),
-    the Gazelle API is used to fetch the latest artist information and add it
-    to the cache prior to returning.
-
-    An API handle is optional. If not specified, reads will return the most
-    recent cached data regardless of the expirytime parameter. If no data is
-    present, an empty dict will be returned.
+    does not exist in the cache for the given site base URL, an empty document
+    will be returned.
     """
-    # TODO
-    return
+    s = couchdb.Server(COUCHURI)
+    db = s['artists']
+    if artistName not in db:
+        return {}
+    if baseurl not in db[artistName]:
+        return {}
+    return db[artistName][baseurl]
 
 
-def add_torrent_info_to_couchdb(apihandle, dbname, torrentid, username=None):
+def set_cached_artist_page(baseurl, artistName, response):
+    """
+    Takes a response from Gazelle about an artist and updates the CouchDB
+    document for this particular baseurl. 
+
+    response should be the value of the 'reponse' key in Gazelle's JSON output.
+    """
+    s = couchdb.Server(COUCHURI)
+    db = s['artists']
+    doc_data = {'data': response, 'lastmod': int(time.time())}
+
+    doc = db.get(artistName)
+    if doc:
+        doc[baseurl] = doc_data
+        db.save(doc)
+    else:
+        doc = {baseurl: doc_data} 
+        db[artistName] = doc
+
+
+def add_torrent_info_to_couchdb(apihandle, torrentid, username=None, allowcache=True):
     """
     Grabs torrentid from Gazelle using the API handle and stores it in dbname
     in CouchDB. The UUID will be the torrent ID. We'll be storing:
@@ -296,6 +346,21 @@ def add_torrent_info_to_couchdb(apihandle, dbname, torrentid, username=None):
     Returns True if there was anything worth storing obtained from Gazelle's
     API and False otherwise
     """
+
+    dbname = 'torrents_' + get_sitename(apihandle)
+
+    # Create the db if it doesn't exist
+    couch = couchdb.Server(COUCHURI)
+    if dbname not in couch:
+        couch.create(dbname)
+
+    db = couch[dbname]
+
+    # If it's already in the cache, just return True to save an API call.
+    if allowcache:
+        if str(torrentid) in db:
+            return True
+
     j = get_torrent_json(apihandle, torrentid)
 
     doc = {'_id': str(torrentid)}
@@ -314,12 +379,6 @@ def add_torrent_info_to_couchdb(apihandle, dbname, torrentid, username=None):
     if 'response' in j:
         doc['torrent'] = j['response']
 
-    # Create the db if it doesn't exist
-    couch = couchdb.Server(COUCHURI)
-    if dbname not in couch:
-        couch.create(dbname)
-
-    db = couch[dbname]
     db.save(doc)
 
     return True
@@ -332,21 +391,23 @@ if __name__ == "__main__":
         print('NUMBER must be a number')
         sys.exit(1)
 
-    # Validate siteName
-    siteName = args['SITE']
-    site = {}
-    for s in SITES:
-        if s['name'] == siteName:
-            site = s
-    if not site:
-        print('SITE not found in config.py. Exiting.')
-        sys.exit(1)
 
-    handle = get_api_handle_for_site(siteName)
 
     if args['torrent']:
+        # Validate siteName
+        siteName = args['SITE']
+        site = {}
+        for s in SITES:
+            if s['name'] == siteName:
+                site = s
+        if not site:
+            print('SITE not found in config.py. Exiting.')
+            sys.exit(1)
+
+        handle = get_api_handle_for_site(siteName)
+
         # Validate seedbox name
-        from config import SEEDBOXES, SERVER_URI
+        from config import SEEDBOXES, SERVER
         seedboxName = args['SEEDBOX']
         seedbox = {}
         for s in SEEDBOXES:
@@ -355,19 +416,49 @@ if __name__ == "__main__":
         if not seedbox:
             print('SEEDBOX not found in config.py. Exiting.')
             sys.exit(1)
-
-        raise NotImplementedError('Torrent adding not yet implemented')
+        close_api_handle_for_site(handle, siteName)
 
         # TODO get N items from server
         # TODO iterate, parse sortArtist, store items in cache, download torrent file, sleep 2 seconds
         # TODO add files to seedbox
 
+        raise NotImplementedError('Torrent adding not yet implemented')
+
     elif args['metadata']:
-        from config import SERVER_URI
-        raise NotImplementedError('Metadata downloading not yet implemented')
 
-        # TODO get N items from server
-        # TODO iterate, grab items using couchdb cache, sleep 2 seconds
-        # TODO return to server
+        handles = []
+        for s in SITES:
+            handles.append(get_api_handle_for_site(s['name']))
 
-    close_api_handle_for_site(handle, siteName)
+        from config import SERVER
+
+        r = requests.get(urljoin(SERVER['url'], 
+                                 '/metadata/{}'.format(args['NUMBER'])),
+                         auth=(SERVER['username'], SERVER['password']))
+
+        reqList = r.json()['albums']
+
+        respList = {}
+        for item in reqList:
+            respItem = []
+            bareArtist = sortartist_to_artist(item['sortArtist'])
+
+            for h in handles:
+                # TODO multithread - one per apihandle
+                ids = find_torrents_for_album(h, bareArtist, item['album'])
+                if not ids:
+                    continue
+                for tid in ids:
+                    respItem.append({'site': h.baseurl,
+                                     'torrentId': tid})
+                    add_torrent_info_to_couchdb(h, tid, allowcache=True)
+
+            respList[str(item['id'])] = respItem
+
+        pprint(respList)
+        r = requests.post(urljoin(SERVER['url'], '/metadata/submit'), 
+                          data=json.dumps(respList),
+                          auth=(SERVER['username'], SERVER['password']))
+
+        for handle in handles:
+            close_api_handle_for_site(handle, get_sitename(handle))
