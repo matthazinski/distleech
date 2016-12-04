@@ -40,6 +40,17 @@ def _first_run(username, password, baseurl, filename):
                                 password=password,
                                 baseurl=baseurl)
     pickle.dump(apihandle.session.cookies, open(filename, 'wb'))
+
+
+def get_sitename(apihandle):
+    """
+    Gets the site name from an apihandle and the config file. A better solution
+    would be to encapsulate both in their own class.
+    """
+    for s in SITES:
+        if normalize_url(s['baseurl']) == normalize_url(apihandle.baseurl):
+            return s['name']
+    return ''  # something's broken
   
 
 def get_api_handle(username, password, baseurl, cookies=None):
@@ -185,29 +196,10 @@ def get_best_torrents_from_group(tg):
 
     
         # TODO if 'remasterTitle' is non-null then this is a reissue
-       
-def read_artist_json(artistId):
-    if os.path.exists('cache/{0}.json'.format(artistId)):
-        with open('cache/{0}.json'.format(artistId)) as f:
-            json_data = f.read()
-
-        data = json.loads(json_data)
-        return data
-
-    else:
-        return {}
-
-
-def write_artist_json(result):
-    if 'response' not in result:
-        return
-
-    artistId = result['response']['id']
-    with open('cache/{0}.json'.format(artistId), 'wb') as f:
-        json.dump(result, f)
 
 
 def get_artist_json(apihandle, artistname):
+    # TODO add caching
     try:
         result = apihandle.request('artist', artistname=artistname)
     except:
@@ -217,37 +209,13 @@ def get_artist_json(apihandle, artistname):
 
 
 def get_torrent_json(apihandle, torrentid):
+    # TODO add caching
     try:
         result = apihandle.request('torrent', id=torrentid)
     except:
         result = {}
 
     return result
-
-
-def csv_to_album_list(csvpath):
-    unparseableArtists = []
-
-    albumsByArtist = {}
-
-    with open(csvpath) as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            bareArtist = ''
-            sortArtist = row['Artist Name']
-            album = row['Album Title']
-
-            bareArtist = sortartist_to_artist(sortArtist)
-
-            if bareArtist == '':
-                unparseableArtists.append(sortArtist)
-            else:
-                if bareArtist in albumsByArtist:
-                    albumsByArtist[bareArtist].append(album)
-                else:
-                    albumsByArtist[bareArtist] = [album]
-    
-    return albumsByArtist, unparseableArtists
 
 
 def sortartist_to_artist(sortArtist):
@@ -266,28 +234,25 @@ def sortartist_to_artist(sortArtist):
         bareArtist = sortArtist.strip()
 
 
-def write_download_torrents_list(handle, artist, albumList, outputDir):
+def find_torrents_for_album(handle, artist, album):
+    """
+    Takes artist and album and returns a list of torrent IDs from the
+    apihandle.
+    """
+    # TODO caching 
     j = get_artist_json(handle, artist)
     if 'response' not in j:
         return
-
-    write_artist_json(j)
-
+    
     print('Finding torrents for {0}'.format(artist))
-        
     ids = []
 
     for group in j['response']['torrentgroup']:
-        if group['groupName'] in albumList:
+        # TODO fuzzy search
+        if group['groupName'] == album:
             print('...found {0}'.format(group['groupName']))
             best = get_best_torrents_from_group(group)
             ids = ids + get_torrent_ids_for_dl(best)
-
-    path = os.path.join(outputDir, '{0}.txt'.format(j['response']['id']))
-    
-    with open(path, 'a') as f:
-        for i in ids:
-            f.write(str(i) + '\n')
 
 
 def get_cached_artist_page(sitename, artistname, apihandle=None, expirytime=0):
