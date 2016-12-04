@@ -1,0 +1,8 @@
+cookies.dat
+__pycache__
+*.pyc
+cache
+config.py
+*.swp
+*.dat
+*.sqlite
