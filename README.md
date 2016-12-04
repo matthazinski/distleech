@@ -1,3 +1,27 @@
+## distleech.py
+
+`distleech.py` is the client application.
+
+### Getting started
+
+* Copy config.py.example to config.py and edit the appropriate values.
+* Install CouchDB on your client machine. Either create databases for
+  "torrents_$sitename" for every site you'll be using, or ensure you have admin
+  privileges on the database.
+* Setup CouchDB replication with the instance running on the server
+  (recommended)
+
+### Usage
+
+Currently, only metadata fetching is supported.
+
+Syntax: `distleech.py metadata NUMBER` where NUMBER is an integer between 1 and
+100, inclusive.
+
+This will search all sites configured in config.py and use CouchDB as a
+metadata cache. Torrent IDs corresponding to the server's AlbumInventory are
+relayed to the server and become DownloadTasks.
+
 ## distleech_server.py
 
 `distleech_server.py` is the Flask server component which acts as a central

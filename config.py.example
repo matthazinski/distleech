@@ -17,4 +17,6 @@ SEEDBOXES = [{'name': 'example',
               'password': 'hunter2',
               'port': 9091}]
 
-SERVER_URI = 'https://foo:bar@example.com'
+SERVER = {'url': 'https://distleech.example.com',
+          'username': 'admin',
+          'password': 'hunter2' }
