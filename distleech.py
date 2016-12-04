@@ -457,7 +457,7 @@ if __name__ == "__main__":
 
         pprint(respList)
         r = requests.post(urljoin(SERVER['url'], '/metadata/submit'), 
-                          data=json.dumps(respList),
+                          json=resplist,
                           auth=(SERVER['username'], SERVER['password']))
 
         for handle in handles:
