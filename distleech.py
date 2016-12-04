@@ -254,7 +254,7 @@ def sortartist_to_artist(sortArtist):
     else:
         bareArtist = sortArtist.strip()
     
-    return sortArtist
+    return bareArtist
 
 
 def find_torrents_for_album(handle, artist, album):
