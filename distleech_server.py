@@ -21,7 +21,7 @@ app = Flask(__name__)
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
-		db = g._database = MySQLdb.connect(host=DB['host'],
+        db = g._database = MySQLdb.connect(host=DB['host'],
                                            user=DB['username'],
                                            passwd=DB['password'],
                                            db=DB['db'])
@@ -56,27 +56,27 @@ def get_all_requests():
 
 
 def add_csv_to_db(csvpath):
-	"""
-	Adds the rows in the given CSV to the sqlite database if they are not
+    """
+    Adds the rows in the given CSV to the sqlite database if they are not
     already present. Rows are never deleted.
     """
-	with app.app_context():
-		cur = get_db().cursor()
-		with open(csvpath) as csvfile:
-			reader = csv.DictReader(csvfile)
-			for row in reader:
-				sortArtist = unicode(row['Artist Name'], 'utf-8').strip()
-				album = unicode(row['Album Title'], 'utf-8').strip()
+    with app.app_context():
+        cur = get_db().cursor()
+        with open(csvpath) as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                sortArtist = unicode(row['Artist Name'], 'utf-8').strip()
+                album = unicode(row['Album Title'], 'utf-8').strip()
 
-				# If it already exists in the DB, ignore it.
-				cur.execute('SELECT * FROM AlbumInventory WHERE Album=:album AND SortArtist=:sortArtist', {'album': album, 'sortArtist': sortArtist})
-				result = cur.fetchone()
-				if result:
-					continue
+                # If it already exists in the DB, ignore it.
+                cur.execute('SELECT * FROM AlbumInventory WHERE Album=:album AND SortArtist=:sortArtist', {'album': album, 'sortArtist': sortArtist})
+                result = cur.fetchone()
+                if result:
+                    continue
 
-				cur.execute('INSERT INTO AlbumInventory(Album, SortArtist, LastDispatched, LastNacked) VALUES (%s, %s, 0, 0)', (album, sortArtist))
+                cur.execute('INSERT INTO AlbumInventory(Album, SortArtist, LastDispatched, LastNacked) VALUES (%s, %s, 0, 0)', (album, sortArtist))
 
-		get_db().commit()
+        get_db().commit()
 
 
 @app.route('/metadata/<int:numrows>')
