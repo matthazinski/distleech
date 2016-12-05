@@ -244,6 +244,7 @@ def sortartist_to_artist(sortArtist):
     Attempts to convert an artist string from Len's sort formatting to an
     actual artist name. This still won't work well for multi-artist lists.
     """
+    bareArtist = sortArtist
     if ',' in sortArtist:
         cs = sortArtist.split(',')
         if len(cs) == 2:
