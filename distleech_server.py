@@ -93,9 +93,10 @@ def get_metadata_to_download(numrows):
 
     now_date = datetime.now()
     min_date = datetime.now() + timedelta(hours=-2)
+
     q = 'SELECT Id, Album, SortArtist FROM AlbumInventory WHERE Id NOT IN (SELECT AlbumRequest FROM DownloadTasks) AND LastDispatched < %s ORDER BY LastNacked ASC LIMIT %s'
     
-    cur.execute(q, (min_date, str(numrows)))
+    cur.execute(q, (min_date, int(numrows)))
     
     rows = cur.fetchall()
     resp = {'albums':[]}
@@ -143,7 +144,7 @@ def get_torrent_to_download():
     min_date = datetime.now() + timedelta(days=-14)
     q = 'SELECT Id, SiteTorrentId FROM DownloadTasks WHERE LastDispatched < %s AND Filled = 0 AND SiteUrl = %s ORDER BY LastDispatched ASC LIMIT %s'
     
-    cur.execute(q, (min_date, site, str(numrows)))
+    cur.execute(q, (min_date, site, int(numrows)))
    
     resp = {'torrents':[]}
     rows = cur.fetchall()
