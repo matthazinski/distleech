@@ -110,7 +110,7 @@ def get_metadata_to_download(numrows):
 
     get_db().commit()
 
-    return jsonify(**resp)
+    return json.dumps(resp, ensure_ascii=False)
 
 
 @app.route('/torrents', methods=['GET', 'POST'])
