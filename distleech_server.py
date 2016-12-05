@@ -74,7 +74,7 @@ def add_csv_to_db(csvpath):
 				if result:
 					continue
 
-				cur.execute('INSERT INTO AlbumInventory(Album, SortArtist, LastDispatched, LastNacked) VALUES (?, ?, 0, 0)', (album, sortArtist))
+				cur.execute('INSERT INTO AlbumInventory(Album, SortArtist, LastDispatched, LastNacked) VALUES (%s, %s, 0, 0)', (album, sortArtist))
 
 		get_db().commit()
 
@@ -93,7 +93,7 @@ def get_metadata_to_download(numrows):
 
     now_date = datetime.now()
     min_date = datetime.now() + timedelta(hours=-2)
-    q = 'SELECT Id, Album, SortArtist FROM AlbumInventory WHERE Id NOT IN (SELECT AlbumRequest FROM DownloadTasks) AND LastDispatched < ? ORDER BY LastNacked ASC LIMIT ?'
+    q = 'SELECT Id, Album, SortArtist FROM AlbumInventory WHERE Id NOT IN (SELECT AlbumRequest FROM DownloadTasks) AND LastDispatched < %s ORDER BY LastNacked ASC LIMIT %s'
     
     cur.execute(q, (min_date, str(numrows)))
     
@@ -104,7 +104,7 @@ def get_metadata_to_download(numrows):
         resp['albums'].append({'id':row[0],
                                'album':row[1],
                                'sortArtist':row[2]})
-        q = 'UPDATE AlbumInventory SET LastDispatched = ? WHERE Id = ?'
+        q = 'UPDATE AlbumInventory SET LastDispatched = %s WHERE Id = %s'
         cur.execute(q, (now_date, row[0]))
 
     get_db().commit()
@@ -141,7 +141,7 @@ def get_torrent_to_download():
 
     now_date = datetime.now()
     min_date = datetime.now() + timedelta(days=-14)
-    q = 'SELECT Id, SiteTorrentId FROM DownloadTasks WHERE LastDispatched < ? AND Filled = 0 AND SiteUrl = ? ORDER BY LastDispatched ASC LIMIT ?'
+    q = 'SELECT Id, SiteTorrentId FROM DownloadTasks WHERE LastDispatched < %s AND Filled = 0 AND SiteUrl = %s ORDER BY LastDispatched ASC LIMIT %s'
     
     cur.execute(q, (min_date, site, str(numrows)))
    
@@ -151,7 +151,7 @@ def get_torrent_to_download():
     for row in rows: 
         resp['torrents'].append({'id': row[0],
                                  'siteTorrentId': row[1]})
-        q = 'UPDATE DownloadTasks SET LastDispatched = ? WHERE Id = ?'
+        q = 'UPDATE DownloadTasks SET LastDispatched = %s WHERE Id = %s'
         cur.execute(q, (now_date, row[0]))
 
     get_db().commit()
@@ -188,7 +188,7 @@ def submit_metadata_results():
         # we don't care because we take that table into account when
         # issuing new metadata dispatches.
         if not v:
-            q = 'UPDATE AlbumInventory SET LastNacked = ? WHERE Id = ?'
+            q = 'UPDATE AlbumInventory SET LastNacked = %s WHERE Id = %s'
             cur.execute(q, (now, albumId))
         else:
             for row in v:
@@ -196,14 +196,14 @@ def submit_metadata_results():
                 tid = row['torrentId']
                 # If there's already a corresponding DownloadTask for the
                 # site, tid pair, we can safely ignore it
-                q = 'SELECT Id FROM DownloadTasks WHERE SiteUrl = ? AND SiteTorrentId = ?'
+                q = 'SELECT Id FROM DownloadTasks WHERE SiteUrl = %s AND SiteTorrentId = %s'
                 cur.execute(q, (site, tid))
                 existingTasks = cur.fetchall() 
                 print(existingTasks)
                 if existingTasks:
                     continue
 
-                q = 'INSERT INTO DownloadTasks(SiteUrl, SiteTorrentId, AlbumRequest, LastDispatched, Filled) VALUES (?, ?, ?, 0, 0)'
+                q = 'INSERT INTO DownloadTasks(SiteUrl, SiteTorrentId, AlbumRequest, LastDispatched, Filled) VALUES (%s, %s, %s, 0, 0)'
                 cur.execute(q, (site, tid, albumId))
 
     get_db().commit()
@@ -221,9 +221,9 @@ def get_stats():
     resp += 'Albums: {0}\n<br>'.format(numAlbums)
 
     min_date = datetime.now() + timedelta(hours=-2)
-    cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched < ?', (min_date,))
+    cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched < %s', (min_date,))
     numStaleMetadataDispatches = len(cur.fetchall())
-    cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched > ?', (min_date,))
+    cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched > %s', (min_date,))
     numActiveMetadataDispatches = len(cur.fetchall())
 
     resp += 'Metadata dispatches: {} stale, {} active\n<br>'.format(numStaleMetadataDispatches, numActiveMetadataDispatches)
