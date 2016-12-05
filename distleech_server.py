@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 from flask import Flask, g, request, jsonify
-from config import DB_PATH, SITES, COUCHURI
+from config import DB, SITES, COUCHURI
 import sqlite3
 import os
 from os.path import expanduser
@@ -13,6 +13,7 @@ import time
 import json
 import couchdb
 from distleech import normalize_url
+import MySQLdb
 
 app = Flask(__name__)
 
@@ -20,7 +21,10 @@ app = Flask(__name__)
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
-        db = g._database = sqlite3.connect(DB_PATH)
+		db = g._database = MySQLdb.connect(host=DB['host'],
+                                           user=DB['username'],
+                                           passwd=DB['password'],
+                                           db=DB['db'])
     return db
 
 

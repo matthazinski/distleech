@@ -9,8 +9,6 @@ SITES = [{'name': 'PTH',
 
 COUCHURI = 'http://127.0.0.1:5984'
 
-DB_PATH = '/home/matt/.distleech/db.sqlite'
-
 SEEDBOXES = [{'name': 'example',
               'host': 'example.com',
               'username': 'admin',
@@ -20,3 +18,8 @@ SEEDBOXES = [{'name': 'example',
 SERVER = {'url': 'https://distleech.example.com',
           'username': 'admin',
           'password': 'hunter2' }
+
+DB = {'host': '127.0.0.1',
+      'username': 'distleech',
+      'password': 'hunter2',
+      'db': 'distleech'}
