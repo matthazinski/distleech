@@ -197,7 +197,6 @@ def submit_metadata_results():
                 q = 'SELECT Id FROM DownloadTasks WHERE SiteUrl = %s AND SiteTorrentId = %s'
                 cur.execute(q, (site, tid))
                 existingTasks = cur.fetchall() 
-                print(existingTasks)
                 if existingTasks:
                     continue
 
@@ -215,9 +214,6 @@ def submit_torrent_results():
     the file server at the specified URI.
     """
     results = request.get_json()
-
-    import pprint
-    pprint.pprint(results)
 
     cur = get_db().cursor()
     if not results:
