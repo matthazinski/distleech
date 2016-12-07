@@ -171,9 +171,6 @@ def submit_metadata_results():
     """
     results = request.get_json()
    
-    import pprint
-    pprint.pprint(results)
-
     cur = get_db().cursor()
     now = datetime.now()
 
@@ -206,6 +203,36 @@ def submit_metadata_results():
 
                 q = 'INSERT INTO DownloadTasks(SiteUrl, SiteTorrentId, AlbumRequest, LastDispatched, Filled) VALUES (%s, %s, %s, 0, 0)'
                 cur.execute(q, (site, tid, albumId))
+
+    get_db().commit()
+    return "Ok", 200
+
+
+@app.route('/torrents/submit', methods=['PUT', 'POST'])
+def submit_torrent_results():
+    """
+    This is used to notify distleech_server that torrents are now available on
+    the file server at the specified URI.
+    """
+    results = request.get_json()
+
+    import pprint
+    pprint.pprint(results)
+
+    cur = get_db().cursor()
+    if not results:
+        return "Invalid request - is it JSON?", 400
+
+    for filePath, v in results.iteritems():
+        if not v:
+            # There is an unknown item at this path. Ignore it for now.
+            continue
+
+        for row in v:
+            site = normalize_url(row['site'])
+            tid = int(row['torrentId'])
+            q = 'UPDATE DownloadTasks SET LocalUri = %s, Filled = 1 WHERE SiteUrl = %s AND SiteTorrentId = %s'
+            cur.execute(q, (filePath, site, tid))
 
     get_db().commit()
     return "Ok", 200
