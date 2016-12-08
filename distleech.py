@@ -221,7 +221,6 @@ def get_artist_json(apihandle, artistname, cacheTimeout=604800):
                 return cached['data'], True
 
     try:
-        time.sleep(2)   # needed for gazelle's ratelimiting
         result = apihandle.request('artist', artistname=artistname)['response']
         set_cached_artist_page(baseurl, artistname, result)
     except:
@@ -233,7 +232,6 @@ def get_artist_json(apihandle, artistname, cacheTimeout=604800):
 def get_torrent_json(apihandle, torrentid):
     # TODO add caching
     try:
-        time.sleep(2)
         result = apihandle.request('torrent', id=torrentid)
     except:
         result = {}
