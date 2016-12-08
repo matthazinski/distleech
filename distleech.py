@@ -16,6 +16,7 @@ Options:
 """ 
 from docopt import docopt
 import whatapi
+import base64
 import cPickle as pickle
 from pprint import pprint
 import json
@@ -32,6 +33,7 @@ from datetime import datetime, timedelta
 from urlparse import urlparse, urljoin
 import requests
 import time
+import transmissionrpc
 
 
 def _first_run(username, password, baseurl, filename):
@@ -251,7 +253,7 @@ def sortartist_to_artist(sortArtist):
             if '/' in cs[1]:
                 bareArtist = sortArtist.split('/')[1].strip()
             else:
-                bareArtist = '{0} {1}'.format(cs[1].strip(), cs[0].strip())
+                bareArtist = u'{0} {1}'.format(cs[1].strip(), cs[0].strip())
     else:
         bareArtist = sortArtist.strip()
     
@@ -270,7 +272,7 @@ def find_torrents_for_album(handle, artist, album):
     # TODO caching 
     j, wasCached = get_artist_json(handle, artist, cacheTimeout=604800)
     
-    print('Finding torrents for {0}'.format(artist))
+    print(u'Finding torrents for {0}'.format(artist).encode('utf-8'))
     ids = []
 
     if 'torrentgroup' not in j:
@@ -279,7 +281,7 @@ def find_torrents_for_album(handle, artist, album):
     for group in j['torrentgroup']:
         # TODO fuzzy search
         if group['groupName'] == album:
-            print('...found {0}'.format(group['groupName']))
+            print('...found {0}'.format(group['groupName']).encode('utf-8'))
             best = get_best_torrents_from_group(group)
             ids = ids + get_torrent_ids_for_dl(best)
 
@@ -393,7 +395,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
 
-
     if args['torrent']:
         # Validate siteName
         siteName = args['SITE']
@@ -417,16 +418,32 @@ if __name__ == "__main__":
         if not seedbox:
             print('SEEDBOX not found in config.py. Exiting.')
             sys.exit(1)
+
+        txrpc = transmissionrpc.Client(address=seedbox['host'],
+                                       port=seedbox['port'],
+                                       user=seedbox['username'],
+                                       password=seedbox['password'])
+
+        r = requests.post(urljoin(SERVER['url'], '/torrents'),
+                          auth=(SERVER['username'], SERVER['password']),
+                          data={'site': site['baseurl'],
+                                'rows': int(args['NUMBER'])})
+
+        torrentsList = r.json()['torrents']
+        pprint(torrentsList)
+
+        for t in torrentsList:
+            siteTid = t['siteTorrentId'] 
+            response = handle.get_torrent(siteTid)
+
+            torrent = base64.b64encode(response)
+            conv = str(torrent)
+            txrpc.add_torrent(conv, download_dir=seedbox['dir'])
+
         close_api_handle_for_site(handle, siteName)
 
-        # TODO get N items from server
-        # TODO iterate, parse sortArtist, store items in cache, download torrent file, sleep 2 seconds
-        # TODO add files to seedbox
-
-        raise NotImplementedError('Torrent adding not yet implemented')
 
     elif args['metadata']:
-
         handles = []
         for s in SITES:
             handles.append(get_api_handle_for_site(s['name']))
