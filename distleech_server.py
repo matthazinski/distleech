@@ -134,7 +134,7 @@ def get_torrent_to_download():
     cur = get_db().cursor()
 
     if 'rows' in request.form:
-        numrows = request.form['rows']
+        numrows = int(request.form['rows'])
     else:
         numrows = 0
     if numrows > 100:   # ratelimit
