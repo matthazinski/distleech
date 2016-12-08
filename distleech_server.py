@@ -245,7 +245,7 @@ def get_stats():
     resp += 'Albums: {0}\n<br>'.format(numAlbums)
 
     min_date = datetime.now() + timedelta(hours=-2)
-    cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched < %s', (min_date,))
+    cur.execute('SELECT Id FROM AlbumInventory WHERE Id NOT IN (SELECT AlbumRequest FROM DownloadTasks) AND LastDispatched < %s', (min_date,))
     numStaleMetadataDispatches = len(cur.fetchall())
     cur.execute('SELECT Id FROM AlbumInventory WHERE LastDispatched > %s', (min_date,))
     numActiveMetadataDispatches = len(cur.fetchall())
