@@ -1,12 +1,12 @@
 #!/usr/bin/env python2
 import couchdb
 import requests
-from config import COUCHURI, SITES
+from urlparse import urljoin
+from config import COUCHURI, SITES, SEARCH_DIRS, SERVER
 from pprint import pprint
 import json
 import os
 from HTMLParser import HTMLParser
-import sys
 
 # The ID in the DB corresponds to the ID on the torrent site. _id is available
 # in the output of map functions so it doesn't need to be specified explicitly.
@@ -75,16 +75,13 @@ def filter_results(localpath, results):
 
 
 def post_torrent_path(localpath, results):
-    URL = 'http://192.168.0.245:8000/torrents/submit'
+    URL = urljoin(SERVER['url'], '/torrents/submit')
     j = {}
     j[localpath] = results #{'site': site, 'torrentId': id}
-    r = requests.post(URL, json=j)
+    r = requests.post(URL, json=j, auth=(SERVER['username'], SERVER['password']))
 
 
-
-#DIRS = [u'/tank/library/contrib/pth/rock']
-
-for d in sys.argv[1:]:
+for d in SEARCH_DIRS:
     for fname in os.listdir(d):
         fname = os.path.join(d, fname)
         allResults = find_torrents_for_dir(fname)
