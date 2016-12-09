@@ -432,11 +432,14 @@ if __name__ == "__main__":
 
         for t in torrentsList:
             siteTid = t['siteTorrentId'] 
-            response = handle.get_torrent(siteTid)
+            try:
+                response = handle.get_torrent(siteTid)
 
-            torrent = base64.b64encode(response)
-            conv = str(torrent)
-            txrpc.add_torrent(conv, download_dir=seedbox['dir'])
+                torrent = base64.b64encode(response)
+                conv = str(torrent)
+                txrpc.add_torrent(conv, download_dir=seedbox['dir'])
+            except:
+                continue
 
         close_api_handle_for_site(handle, siteName)
 
