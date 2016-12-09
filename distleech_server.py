@@ -92,10 +92,10 @@ def get_metadata_to_download(numrows):
         numrows = 100
 
     now_date = datetime.now()
-    min_date = datetime.now() + timedelta(hours=-2)
+    min_date = datetime.now() + timedelta(hours=-1)
 
-    q = 'SELECT Id, Album, SortArtist FROM AlbumInventory WHERE Id NOT IN (SELECT AlbumRequest FROM DownloadTasks) AND LastDispatched < %s ORDER BY LastNacked ASC LIMIT %s'
-    
+    q = 'SELECT Id, Album, SortArtist FROM AlbumInventory WHERE Id NOT IN (SELECT AlbumRequest FROM DownloadTasks) AND LastDispatched < %s ORDER BY LastNacked ASC, LastDispatched ASC LIMIT %s'
+
     cur.execute(q, (min_date, int(numrows)))
     
     rows = cur.fetchall()
