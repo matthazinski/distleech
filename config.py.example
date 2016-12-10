@@ -1,27 +1,32 @@
-SITES = [{'name': 'PTH',
+# Site names must be unique
+SITES = [{'name': 'example',
           'username': 'root',
           'password': 'hunter2',
-          'baseurl': 'https://passtheheadphones.me'},
-         {'name': 'apollo',
-          'username': 'root',
-          'password': 'hunter2',
-          'baseurl': 'https://apollo.rip'}]
+          'baseurl': 'https://example.com'}]
 
+# For best performance, run several geographically dispersed CouchDB nodes.
 COUCHURI = 'http://127.0.0.1:5984'
 
+
+######### CLIENT-ONLY CONFIG ###########3
+SERVER = {'url': 'https://distleech.example.com',
+          'username': 'admin',
+          'password': 'hunter2' }
+
+# Only transmission is supported. Names must be unique.
 SEEDBOXES = [{'name': 'example',
               'host': 'example.com',
               'username': 'admin',
               'password': 'hunter2',
               'port': 9091}]
 
-SERVER = {'url': 'https://distleech.example.com',
-          'username': 'admin',
-          'password': 'hunter2' }
 
+######### SERVER-ONLY CONFIG ##########33
 DB = {'host': '127.0.0.1',
       'username': 'distleech',
       'password': 'hunter2',
       'db': 'distleech'}
 
+# Only needed to submit finished torrents (e.g. to run dir_id.py on a central
+# file server)
 SEARCH_DIRS = ['/tank/torrents/distleech']

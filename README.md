@@ -103,14 +103,14 @@ $ curl http://localhost:5000/metadata/2
 {
   "albums": [
     {
-      "album": "You've Never Seen Everything", 
-      "id": 231, 
-      "sortArtist": "Cockburn, Bruce"
+      "album": "1401",
+      "id": 108,
+      "sortArtist": "Brizbomb"
     }, 
     {
-      "album": "Life Short Call Now", 
-      "id": 232, 
-      "sortArtist": "Cockburn, Bruce"
+      "album": "Recordings of Shortwave Numbers Stations",
+      "id": 123,
+      "sortArtist": "The Conet Project"
     }
   ]
 }
