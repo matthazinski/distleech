@@ -11,22 +11,20 @@ client nodes. Client nodes are responsible for either performing API requests
 (if they accept a metadata download task) or downloading torrents (if they
 accept a torrent download task). 
 
-CouchDB is used to store metadata about torrents and artists. There are several
-reasons for this. Client nodes can cache artist information to avoid an
-expensive (2 second) API call to Gazelle; if multiple albums for a given artist
-exist in the metadata download queue, there is no guarantee that they will be
-dispatched to the same client. Storing torrent file lists and directory names
-also allows easy identification of the torrent associated with a given
-directory via a CouchDB query.
+CouchDB is used to store metadata about torrents and artists for several
+purposes.  Client nodes can cache artist information to avoid an expensive (2
+second) API call to Gazelle; this is needed because if multiple albums for a
+given artist exist in the metadata download queue, there is no guarantee that
+they will be dispatched at the same time. Storing torrent file lists and
+directory names also allows easy identification of the torrent associated with
+a given directory via a CouchDB query.
 
 If multiple clients are needed, a central CouchDB server is recommended.
 Bidirectional replication can then be configured with all client nodes syncing
 to the central database server.
 
 For now, files must be transferred out of band between a seedbox and central
-file server. I can't think of an elegant way to do this securely with NFSv4.
-Object storage is probably more suitable in the long run, since we don't need
-to preserve owner information.
+file server.
 
 
 ## distleech.py
@@ -81,7 +79,8 @@ $ python2
 >>> init_db()
 ```
 
-* Add your inventory CSVs. Ideally this would be done with a cronjob that grabs the latest data.
+* Add your inventory CSVs. Ideally this would be done with a cronjob that grabs
+  the latest data.
 
 ```
 $ python2
@@ -121,19 +120,20 @@ $ curl http://localhost:5000/metadata/2
 
 Once a client has attempted to locate torrents corresponding to rows in the
 AlbumInventory table, it should submit those to the distleech server. The
-following example sends the following data:
+following example sends this information back to the server:
 
   * Entry #111 in the AlbumInventory table is available as torrent number 37 on
-    PTH
+    example.com
+    
   * Entry #444 in the AlbumInventory table could not be located
 
-`$ curl -H "Content-type: application/json" -X POST http://localhost:5000/metadata/submit -d '{"111": [{"site":"https://passtheheadphones.me/", "torrentId":37}], "444":[]}'`
+`$ curl -H "Content-type: application/json" -X POST http://localhost:5000/metadata/submit -d '{"111": [{"site":"https://example.com/", "torrentId":37}], "444":[]}'`
 
 This will result in:
 
   * Further attempts to find entry #444
-  * PTH torrent #37 will become available in the download queue for the next
-    client willing to accept it
+  * Example.com torrent #37 becoming available in the download queue for the
+    next client willing to accept it
 
 Note that you must send AlbumInventory ID numbers as strings. Flask's JSON
 parser can't handle integer dict keys (nor can JavaScript).
@@ -142,12 +142,14 @@ parser can't handle integer dict keys (nor can JavaScript).
 
 Send the "site" and "rows" POST form fields to `/torrents` accept "rows" number
 of torrents to download from the given site. A JSON response is returned,
-containing the user-specified site's hostname and a list of torrents.
+containing the user-specified site's hostname and a list of torrents. Note that
+in responses from the server as well as CouchDB, site URLs are stored as FQDNs
+only in an effort to deduplicate.
 
 ```
-$ curl -X POST http://localhost:5000/torrents -d 'site=https://passtheheadphones.me&rows=5'
+$ curl -X POST http://localhost:5000/torrents -d 'site=https://example.com&rows=5'
 {
-  "site": "passtheheadphones.me", 
+  "site": "example.com", 
   "torrents": [
     {
       "id": 1, 
@@ -159,11 +161,16 @@ $ curl -X POST http://localhost:5000/torrents -d 'site=https://passtheheadphones
 
 ### Submitting torrents
 
-Similar to the metadata submission, torrent submission uses the `/torrents/submit` endpoint. You should submit a JSON dict in the form of: "{localPath: [{'site': site, 'torrentId', tid}]}"
+Similar to the metadata submission, torrent submission uses the
+`/torrents/submit` endpoint. You should submit a JSON dict in the form of:
+`{localPath: [{'site': site, 'torrentId', tid}]}`
 
 ```
-$ curl -X POST http://localhost:5000/torrents/submit -d '{"/path/to/dir": [{"site": "https://what.cd", "torrentId": 5555}]}'
+$ curl -X POST http://localhost:5000/torrents/submit -d '{"/path/to/dir": [{"site": "https://example.com", "torrentId": 5555}]}'
 ```
+
+You must submit the torrents to the distleech server endpoint, else they will
+expire and be allocated to another worker node for download.
 
 Since Gazelle provides a file list in the torrent API, we can figure out which
 torrent a given directory in the ingest volume corresponds to, as long as the
@@ -176,11 +183,3 @@ determine where a torrent's files live should a reseed request be received.
 ### Monitoring
 
 Check `/stats` to get some quick statistics.
-
-## TODO
-
-* Native basic auth in distleech_server. Currently you can run this behind
-  nginx and have it handle auth for you.
-* Handling submitted torrents with CouchDB and mapreduce
-* CouchDB replication
-* Consider moving to a single "torrents" CouchDB database
