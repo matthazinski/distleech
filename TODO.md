@@ -10,3 +10,4 @@ Here's some things in the pipeline I haven't yet had time to work on:
 * Replace /stats with a JSON API and more human-parseable content depending on
   "Accept" header.
 * Add more useful queries to /stats
+* API endpoint to mark torrents as no longer available (e.g. due to a trump)
